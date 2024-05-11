@@ -1,6 +1,5 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local PathfindingService = game:GetService("PathfindingService")
 local UserInputService = game:GetService("UserInputService")
 
 local Player = Players.LocalPlayer
@@ -45,7 +44,6 @@ end)
 local function handleCombatAI(character)
     local Humanoid = character:WaitForChild("Humanoid")
     local RootPart = character:WaitForChild("HumanoidRootPart")
-    local pathfinder = PathfindingService:CreatePath({AgentRadius = 2, AgentHeight = 5, AgentCanJump = true})
     local currentTarget = nil
     local lastShakeTime = tick()
 
@@ -64,56 +62,56 @@ local function handleCombatAI(character)
         return closestEnemy
     end
 
-    local function MoveToPosition(targetPosition)
-        pathfinder:ComputeAsync(RootPart.Position, targetPosition)
-        local waypoints = pathfinder:GetWaypoints()
-
-        for _, waypoint in ipairs(waypoints) do
-            if waypoint.Action == Enum.PathWaypointAction.Jump then
-                Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-            end
-            Humanoid:MoveTo(waypoint.Position)
-            Humanoid.MoveToFinished:Wait()
-        end
-    end
-
     local function CombatRoutine()
         while aiActive do
             local enemy = GetClosestEnemy()
             if enemy and enemy.Character then
                 local enemyHumanoid = enemy.Character:FindFirstChildOfClass("Humanoid")
                 if enemyHumanoid then
-                    if enemy ~= currentTarget then
-                        currentTarget = enemy
-                    end
+                    -- Sync jump with the enemy
+                    enemyHumanoid.StateChanged:Connect(function(_, newState)
+                        if newState == Enum.HumanoidStateType.Freefall and Humanoid.FloorMaterial ~= Enum.Material.Air then
+                            Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                        end
+                    end)
+                end
 
-                    if currentTarget.Character.Humanoid.Health > 0 then
-                        local leftArm = currentTarget.Character:FindFirstChild("Left Arm")
-                        local rightArm = currentTarget.Character:FindFirstChild("Right Arm")
+                if enemy ~= currentTarget then
+                    currentTarget = enemy
+                end
 
-                        if leftArm and rightArm then
-                            local leftArmTarget = leftArm.Position - (leftArm.Position - RootPart.Position).unit * leftArmDistance
-                            local rightArmAvoid = rightArm.Position + (RootPart.Position - rightArm.Position).unit * rightArmDistance
-                            local moveToPosition = (leftArmTarget + rightArmAvoid) / 2
+                if currentTarget.Character.Humanoid.Health > 0 then
+                    local leftArm = currentTarget.Character:FindFirstChild("Left Arm")
+                    local rightArm = currentTarget.Character:FindFirstChild("Right Arm")
 
-                            -- Shaking effect
-                            if tick() - lastShakeTime > shakeFrequency then
-                                lastShakeTime = tick()
-                                RootPart.CFrame = RootPart.CFrame * CFrame.Angles(0, math.random() < 0.5 and -shakeIntensity or shakeIntensity, 0)
-                            end
+                    if leftArm and rightArm then
+                        local leftArmTarget = leftArm.Position - (leftArm.Position - RootPart.Position).unit * leftArmDistance
+                        local rightArmAvoid = rightArm.Position + (RootPart.Position - rightArm.Position).unit * rightArmDistance
+                        local moveToPosition = (leftArmTarget + rightArmAvoid) / 2
 
-                            MoveToPosition(moveToPosition)
+                        -- Adjust Y-position for horizontal orientation only
+                        moveToPosition = Vector3.new(moveToPosition.X, RootPart.Position.Y, moveToPosition.Z)
 
-                            local distanceToTarget = (RootPart.Position - moveToPosition).magnitude
-                            if distanceToTarget <= attackRange then
-                                local tool = character:FindFirstChildOfClass("Tool")
-                                if tool then tool:Activate() end
-                            end
+                        -- Shaking effect
+                        if tick() - lastShakeTime > shakeFrequency then
+                            lastShakeTime = tick()
+                            RootPart.CFrame = RootPart.CFrame * CFrame.Angles(0, math.random() < 0.5 and -shakeIntensity or shakeIntensity, 0)
+                        end
+
+                        RootPart.CFrame = RootPart.CFrame:Lerp(CFrame.new(RootPart.Position, moveToPosition), turnRatio)
+                        Humanoid:MoveTo(moveToPosition)
+
+                        local distanceToTarget = (RootPart.Position - moveToPosition).magnitude
+                        if distanceToTarget <= attackRange then
+                            local tool = character:FindFirstChildOfClass("Tool")
+                            if tool then tool:Activate() end
                         end
                     end
                 end
+            elseif currentTarget and currentTarget.Character.Humanoid.Health <= 0 then
+                currentTarget = nil  -- Clear target if it is defeated
             end
-            wait(0.1)  # Check every 0.1 seconds to minimize performance impact
+            wait(0.1)  -- Check every 0.1 seconds to minimize performance impact
         end
     end
 
