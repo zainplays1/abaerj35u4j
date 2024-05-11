@@ -1,6 +1,5 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 
 local Player = Players.LocalPlayer
 local aiActive = false
@@ -10,6 +9,7 @@ local attackRange = 10  -- Distance within which the AI will attempt to use the 
 local shakeIntensity = math.rad(0.5)  -- Intensity for realistic shaking
 local shakeFrequency = 0.5  -- Frequency of shaking in seconds
 local turnRatio = 0.5  -- Smoothness of turning
+local closeProximity = 5  -- Distance at which strategic turning is activated
 
 -- Setup GUI for toggling AI
 local function createGUI()
@@ -31,14 +31,6 @@ local function createGUI()
         button.BackgroundColor3 = aiActive and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
     end)
 end
-
--- Toggle AI activation with the "Y" key
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if not gameProcessed and input.KeyCode == Enum.KeyCode.Y then
-        aiActive = not aiActive
-        print("AI Toggled:", aiActive and "ON" or "OFF")  -- Optional: Visual feedback in the output
-    end
-end)
 
 -- Main combat AI routine
 local function handleCombatAI(character)
@@ -81,31 +73,29 @@ local function handleCombatAI(character)
                 end
 
                 if currentTarget.Character.Humanoid.Health > 0 then
-                    local leftArm = currentTarget.Character:FindFirstChild("Left Arm")
-                    local rightArm = currentTarget.Character:FindFirstChild("Right Arm")
+                    local targetPosition = currentTarget.Character.HumanoidRootPart.Position
+                    local distanceToTarget = (RootPart.Position - targetPosition).magnitude
 
-                    if leftArm and rightArm then
-                        local leftArmTarget = leftArm.Position - (leftArm.Position - RootPart.Position).unit * leftArmDistance
-                        local rightArmAvoid = rightArm.Position + (RootPart.Position - rightArm.Position).unit * rightArmDistance
-                        local moveToPosition = (leftArmTarget + rightArmAvoid) / 2
+                    if distanceToTarget <= closeProximity then
+                        -- Strategic turning: slightly turn left when close
+                        targetPosition = targetPosition - RootPart.CFrame.RightVector * 2
+                    end
 
-                        -- Adjust Y-position for horizontal orientation only
-                        moveToPosition = Vector3.new(moveToPosition.X, RootPart.Position.Y, moveToPosition.Z)
+                    -- Maintain horizontal orientation and move towards the target
+                    local horizontalDirection = Vector3.new(targetPosition.X, RootPart.Position.Y, targetPosition.Z)
+                    RootPart.CFrame = RootPart.CFrame:Lerp(CFrame.new(RootPart.Position, horizontalDirection), turnRatio)
 
-                        -- Shaking effect
-                        if tick() - lastShakeTime > shakeFrequency then
-                            lastShakeTime = tick()
-                            RootPart.CFrame = RootPart.CFrame * CFrame.Angles(0, math.random() < 0.5 and -shakeIntensity or shakeIntensity, 0)
-                        end
+                    Humanoid:MoveTo(targetPosition)
 
-                        RootPart.CFrame = RootPart.CFrame:Lerp(CFrame.new(RootPart.Position, moveToPosition), turnRatio)
-                        Humanoid:MoveTo(moveToPosition)
+                    -- Shaking effect
+                    if tick() - lastShakeTime > shakeFrequency then
+                        lastShakeTime = tick()
+                        RootPart.CFrame = RootPart.CFrame * CFrame.Angles(0, math.random() < 0.5 and -shakeIntensity or shakeIntensity, 0)
+                    end
 
-                        local distanceToTarget = (RootPart.Position - moveToPosition).magnitude
-                        if distanceToTarget <= attackRange then
-                            local tool = character:FindFirstChildOfClass("Tool")
-                            if tool then tool:Activate() end
-                        end
+                    if distanceToTarget <= attackRange then
+                        local tool = character:FindFirstChildOfClass("Tool")
+                        if tool then tool:Activate() end
                     end
                 end
             elseif currentTarget and currentTarget.Character.Humanoid.Health <= 0 then
