@@ -1,7 +1,11 @@
 repeat
 	task.wait()
-until game:IsLoaded() and game:GetService("Players").LocalPlayer and game:GetService("Players").LocalPlayer.Character and game:GetService("Players").LocalPlayer.Character:FindFirstChild("Animate") and game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid") and game.Players.LocalPlayer.Character.Humanoid:FindFirstChild("Animator")
-
+until game:IsLoaded() and
+	game:GetService("Players").LocalPlayer and
+	game:GetService("Players").LocalPlayer.Character and
+	game:GetService("Players").LocalPlayer.Character:FindFirstChild("Animate") and
+	game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid") and
+	game.Players.LocalPlayer.Character.Humanoid:FindFirstChild("Animator")
 local a = game.Players.LocalPlayer.Character.Animate
 local b = "http://www.roblox.com/asset/?id="
 local c
