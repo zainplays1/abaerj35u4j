@@ -45,7 +45,7 @@ local function findPlayerByName(partialName)
 end
 
 local function handleCommands(message, player)
-    local command, args = message:match("^/e (%w+)%s*(.*)")
+    local command, args = message:match("^/ (%w+)%s*(.*)")
     if command then
         if command == "come" and player == Player then
             followPlayer = player
