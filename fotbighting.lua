@@ -1,12 +1,11 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 
 local Player = Players.LocalPlayer
 local aiActive = true  -- AI is always on by default
+local currentTarget = nil
 local followPlayer = nil
 local attackTarget = nil
-local currentTarget = nil
 
 -- Setup GUI for toggling AI
 local function createGUI()
@@ -30,29 +29,26 @@ local function createGUI()
     end)
 end
 
--- Listen to chat commands directly from the player
-local function onPlayerChatted(player, message)
-    print("Received message from " .. player.Name .. ": " .. message)  -- Debugging output
-    if player == Player then
-        local command, args = message:match("^/(%w+)%s*(.*)")
-        if command then
-            if command == "come" then
-                followPlayer = player
-                attackTarget = nil
-                print("AI is coming to " .. player.Name)
-            elseif command == "attack" and args ~= "" then
-                attackTarget = findPlayerByName(args)
-                followPlayer = nil
-                if attackTarget then
-                    print("AI is attacking " .. attackTarget.Name)
-                else
-                    print("Player not found for attack.")
-                end
-            elseif command == "stop" then
-                followPlayer = nil
-                attackTarget = nil
-                print("AI actions stopped.")
-            end
+-- Function to handle chat commands
+local function onPlayerChatted(sender, message)
+    if sender == Player then
+        local args = message:split(" ")
+        local command = args[1]:lower()
+
+        if command == "/follow" and #args > 1 then
+            local targetName = table.concat(args, " ", 2)
+            followPlayer = findPlayerByName(targetName)
+            attackTarget = nil
+            print("Command to follow: " .. (followPlayer and followPlayer.Name or "player not found"))
+        elseif command == "/attack" and #args > 1 then
+            local targetName = table.concat(args, " ", 2)
+            attackTarget = findPlayerByName(targetName)
+            followPlayer = nil
+            print("Command to attack: " .. (attackTarget and attackTarget.Name or "player not found"))
+        elseif command == "/stop" then
+            followPlayer = nil
+            attackTarget = nil
+            print("AI actions stopped.")
         end
     end
 end
@@ -60,14 +56,26 @@ end
 -- Connect the chat handler
 Player.Chatted:Connect(onPlayerChatted)
 
--- Combat and movement routine
-local function CombatRoutine()
+-- Helper function to find player by partial name match
+local function findPlayerByName(partialName)
+    partialName = partialName:lower()
+    for _, p in pairs(Players:GetPlayers()) do
+        local username = p.Name:lower()
+        local displayName = (p.DisplayName or ""):lower()
+        if username:find(partialName) or displayName:find(partialName) then
+            return p
+        end
+    end
+    return nil
+end
+
+-- Main combat AI routine
+local function trackAndInteract()
     while true do
         wait(0.1)
-        if not aiActive then continue end
-        if not Player.Character or not Player.Character:FindFirstChild("Humanoid") then continue end
+        if not aiActive or not Player.Character or not Player.Character:FindFirstChild("HumanoidRootPart") then continue end
 
-        local humanoid = Player.Character.Humanoid
+        local humanoid = Player.Character:FindFirstChildOfClass("Humanoid")
         local rootPart = Player.Character.HumanoidRootPart
 
         if followPlayer and followPlayer.Character and followPlayer.Character:FindFirstChild("HumanoidRootPart") then
@@ -80,12 +88,12 @@ local function CombatRoutine()
                 if tool then
                     tool:Activate()
                     print("Attacking " .. attackTarget.Name)  -- Debugging output
-                end
+                }
             end
         end
     end
 end
 
-RunService.RenderStepped:Connect(CombatRoutine)
+RunService.RenderStepped:Connect(trackAndInteract)
 
 createGUI()
