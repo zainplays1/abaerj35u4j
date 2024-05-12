@@ -1,16 +1,12 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local Player = Players.LocalPlayer
 local aiActive = true  -- AI is always on by default
 local followPlayer = nil
 local attackTarget = nil
 local currentTarget = nil
-local closeProximity = 5  -- Distance at which strategic turning is activated
-local attackRange = 10  -- Range within which the AI will attempt to attack
-local shakeIntensity = math.rad(0.5)  -- Intensity of shaking effect
-local shakeFrequency = 0.5  -- Frequency of shaking in seconds
-local turnRatio = 0.5  -- Smoothness of turning adjustments
 
 -- Setup GUI for toggling AI
 local function createGUI()
@@ -34,88 +30,59 @@ local function createGUI()
     end)
 end
 
--- Helper function to find player by partial name match
-local function findPlayerByName(partialName)
-    partialName = partialName:lower()
-    for _, p in pairs(Players:GetPlayers()) do
-        local username = p.Name:lower()
-        local displayName = (p.DisplayName or ""):lower()
-        if username:find(partialName) or displayName:find(partialName) then
-            return p
-        end
-    end
-    return nil
-end
-
--- Function to handle chat commands
+-- Listen to chat commands directly from the player
 local function onPlayerChatted(player, message)
+    print("Received message from " .. player.Name .. ": " .. message)  -- Debugging output
     if player == Player then
         local command, args = message:match("^/(%w+)%s*(.*)")
         if command then
             if command == "come" then
-                followPlayer = Player
+                followPlayer = player
                 attackTarget = nil
+                print("AI is coming to " .. player.Name)
             elseif command == "attack" and args ~= "" then
                 attackTarget = findPlayerByName(args)
                 followPlayer = nil
+                if attackTarget then
+                    print("AI is attacking " .. attackTarget.Name)
+                else
+                    print("Player not found for attack.")
+                end
             elseif command == "stop" then
                 followPlayer = nil
                 attackTarget = nil
+                print("AI actions stopped.")
             end
         end
     end
 end
 
 -- Connect the chat handler
-Players.LocalPlayer.Chatted:Connect(onPlayerChatted)
+Player.Chatted:Connect(onPlayerChatted)
 
--- Main combat AI routine
+-- Combat and movement routine
 local function CombatRoutine()
-    local lastShakeTime = tick()
-    while aiActive do
-        local enemy = attackTarget or followPlayer
-        if enemy and enemy.Character then
-            local enemyHumanoid = enemy.Character:FindFirstChildOfClass("Humanoid")
-            if enemyHumanoid and currentTarget ~= enemy then
-                -- Sync jump with the enemy
-                enemyHumanoid.StateChanged:Connect(function(_, newState)
-                    if newState == Enum.HumanoidStateType.Freefall and Player.Character.Humanoid.FloorMaterial ~= Enum.Material.Air then
-                        Player.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                    end
-                end)
-                currentTarget = enemy
-            end
+    while true do
+        wait(0.1)
+        if not aiActive then continue end
+        if not Player.Character or not Player.Character:FindFirstChild("Humanoid") then continue end
 
-            if currentTarget.Character.Humanoid.Health > 0 then
-                local targetPosition = currentTarget.Character.HumanoidRootPart.Position
-                local distanceToTarget = (Player.Character.HumanoidRootPart.Position - targetPosition).magnitude
+        local humanoid = Player.Character.Humanoid
+        local rootPart = Player.Character.HumanoidRootPart
 
-                if distanceToTarget <= closeProximity then
-                    -- Strategic turning: slightly turn left when close
-                    targetPosition = targetPosition - Player.Character.HumanoidRootPart.CFrame.RightVector * 2
-                end
-
-                -- Maintain horizontal orientation and move towards the target
-                local horizontalDirection = Vector3.new(targetPosition.X, Player.Character.HumanoidRootPart.Position.Y, targetPosition.Z)
-                Player.Character.HumanoidRootPart.CFrame = Player.Character.HumanoidRootPart.CFrame:Lerp(CFrame.new(Player.Character.HumanoidRootPart.Position, horizontalDirection), turnRatio)
-
-                Player.Character.Humanoid:MoveTo(targetPosition)
-
-                -- Shaking effect
-                if tick() - lastShakeTime > shakeFrequency then
-                    lastShakeTime = tick()
-                    Player.Character.HumanoidRootPart.CFrame = Player.Character.HumanoidRootPart.CFrame * CFrame.Angles(0, math.random() < 0.5 and -shakeIntensity or shakeIntensity, 0)
-                end
-
-                if distanceToTarget <= attackRange then
-                    local tool = Player.Character:FindFirstChildOfClass("Tool")
-                    if tool then tool:Activate() end
+        if followPlayer and followPlayer.Character and followPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            humanoid:MoveTo(followPlayer.Character.HumanoidRootPart.Position)
+            print("Moving to " .. followPlayer.Name)  -- Debugging output
+        elseif attackTarget and attackTarget.Character and attackTarget.Character:FindFirstChild("HumanoidRootPart") then
+            humanoid:MoveTo(attackTarget.Character.HumanoidRootPart.Position)
+            if (rootPart.Position - attackTarget.Character.HumanoidRootPart.Position).magnitude <= 10 then
+                local tool = Player.Character:FindFirstChildOfClass("Tool")
+                if tool then
+                    tool:Activate()
+                    print("Attacking " .. attackTarget.Name)  -- Debugging output
                 end
             end
-        elseif currentTarget and currentTarget.Character.Humanoid.Health <= 0 then
-            currentTarget = nil  -- Clear target if it is defeated
         end
-        wait(0.1)  -- Check every 0.1 seconds to minimize performance impact
     end
 end
 
