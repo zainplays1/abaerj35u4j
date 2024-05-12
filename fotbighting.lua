@@ -1,15 +1,11 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local ChatService = game:GetService("Chat")
 
 local Player = Players.LocalPlayer
 local aiActive = false
-local leftArmDistance = 2  -- Desired close distance to the enemy's left arm
-local rightArmDistance = 5  -- Desired avoidance distance from the enemy's right arm
-local attackRange = 10  -- Distance within which the AI will attempt to use the sword
-local shakeIntensity = math.rad(0.5)  -- Intensity for realistic shaking
-local shakeFrequency = 0.5  -- Frequency of shaking in seconds
-local turnRatio = 0.5  -- Smoothness of turning
-local closeProximity = 5  -- Distance at which strategic turning is activated
+local followPlayer = nil
+local attackTarget = nil
 
 -- Setup GUI for toggling AI
 local function createGUI()
@@ -32,85 +28,65 @@ local function createGUI()
     end)
 end
 
--- Main combat AI routine
-local function handleCombatAI(character)
-    local Humanoid = character:WaitForChild("Humanoid")
-    local RootPart = character:WaitForChild("HumanoidRootPart")
-    local currentTarget = nil
-    local lastShakeTime = tick()
-
-    local function GetClosestEnemy()
-        local closestEnemy = nil
-        local shortestDistance = math.huge
-        for _, otherPlayer in pairs(Players:GetPlayers()) do
-            if otherPlayer ~= Player and otherPlayer.Character and otherPlayer.Character:FindFirstChild("HumanoidRootPart") and otherPlayer.Character.Humanoid.Health > 0 then
-                local distance = (otherPlayer.Character.HumanoidRootPart.Position - RootPart.Position).magnitude
-                if distance < shortestDistance then
-                    closestEnemy = otherPlayer
-                    shortestDistance = distance
-                end
+local function findPlayerByName(partialName)
+    partialName = partialName:lower()
+    local closestMatch = nil
+    local shortestDistance = math.huge
+    for _, p in pairs(Players:GetPlayers()) do
+        local username = p.Name:lower()
+        local displayName = (p.DisplayName or ""):lower()
+        if username:find(partialName) or displayName:find(partialName) then
+            if closestMatch == nil or username:sub(1, #partialName) == partialName or displayName:sub(1, #partialName) == partialName then
+                closestMatch = p
             end
         end
-        return closestEnemy
     end
-
-    local function CombatRoutine()
-        while aiActive do
-            local enemy = GetClosestEnemy()
-            if enemy and enemy.Character then
-                local enemyHumanoid = enemy.Character:FindFirstChildOfClass("Humanoid")
-                if enemyHumanoid then
-                    -- Sync jump with the enemy
-                    enemyHumanoid.StateChanged:Connect(function(_, newState)
-                        if newState == Enum.HumanoidStateType.Freefall and Humanoid.FloorMaterial ~= Enum.Material.Air then
-                            Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                        end
-                    end)
-                end
-
-                if enemy ~= currentTarget then
-                    currentTarget = enemy
-                end
-
-                if currentTarget.Character.Humanoid.Health > 0 then
-                    local targetPosition = currentTarget.Character.HumanoidRootPart.Position
-                    local distanceToTarget = (RootPart.Position - targetPosition).magnitude
-
-                    if distanceToTarget <= closeProximity then
-                        -- Strategic turning: slightly turn left when close
-                        targetPosition = targetPosition - RootPart.CFrame.RightVector * 2
-                    end
-
-                    -- Maintain horizontal orientation and move towards the target
-                    local horizontalDirection = Vector3.new(targetPosition.X, RootPart.Position.Y, targetPosition.Z)
-                    RootPart.CFrame = RootPart.CFrame:Lerp(CFrame.new(RootPart.Position, horizontalDirection), turnRatio)
-
-                    Humanoid:MoveTo(targetPosition)
-
-                    -- Shaking effect
-                    if tick() - lastShakeTime > shakeFrequency then
-                        lastShakeTime = tick()
-                        RootPart.CFrame = RootPart.CFrame * CFrame.Angles(0, math.random() < 0.5 and -shakeIntensity or shakeIntensity, 0)
-                    end
-
-                    if distanceToTarget <= attackRange then
-                        local tool = character:FindFirstChildOfClass("Tool")
-                        if tool then tool:Activate() end
-                    end
-                end
-            elseif currentTarget and currentTarget.Character.Humanoid.Health <= 0 then
-                currentTarget = nil  -- Clear target if it is defeated
-            end
-            wait(0.1)  -- Check every 0.1 seconds to minimize performance impact
-        end
-    end
-
-    RunService.RenderStepped:Connect(CombatRoutine)
+    return closestMatch
 end
+
+local function handleCommands(message, player)
+    local command, args = message:match("^/e (%w+)%s*(.*)")
+    if command then
+        if command == "come" and player == Player then
+            followPlayer = player
+            attackTarget = nil
+        elseif command == "attack" and args ~= "" and player == Player then
+            attackTarget = findPlayerByName(args)
+            followPlayer = nil
+        elseif command == "stop" and player == Player then
+            followPlayer = nil
+            attackTarget = nil
+        end
+    end
+end
+
+ChatService.Chatted:Connect(handleCommands)
+
+local function trackAndInteract()
+    while aiActive do
+        local character = Player.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+        if not humanoid or not rootPart then repeat wait() until Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") end
+
+        if followPlayer then
+            humanoid:MoveTo(followPlayer.Character.HumanoidRootPart.Position)
+        elseif attackTarget then
+            humanoid:MoveTo(attackTarget.Character.HumanoidRootPart.Position)
+            if (rootPart.Position - attackTarget.Character.HumanoidRootPart.Position).magnitude < 10 then
+                local tool = character:FindFirstChildOfClass("Tool")
+                if tool then tool:Activate() end
+            end
+        end
+        wait(0.1)
+    end
+end
+
+RunService.RenderStepped:Connect(trackAndInteract)
 
 Player.CharacterAdded:Connect(function(character)
     character:WaitForChild("Humanoid")
-    handleCombatAI(character)
+    trackAndInteract()
 end)
 
 createGUI()
