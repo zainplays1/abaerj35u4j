@@ -3,9 +3,11 @@ local RunService = game:GetService("RunService")
 
 local Player = Players.LocalPlayer
 local aiActive = true  -- AI is always on by default
-local currentTarget = nil
 local followPlayer = nil
 local attackTarget = nil
+local currentTarget = nil
+local leftArmDistance = 2
+local rightArmAvoidance = 5
 
 -- Setup GUI for toggling AI
 local function createGUI()
@@ -29,71 +31,80 @@ local function createGUI()
     end)
 end
 
--- Function to handle chat commands
-local function onPlayerChatted(sender, message)
-    if sender == Player then
-        local args = message:split(" ")
-        local command = args[1]:lower()
-
-        if command == "/follow" and #args > 1 then
-            local targetName = table.concat(args, " ", 2)
-            followPlayer = findPlayerByName(targetName)
-            attackTarget = nil
-            print("Command to follow: " .. (followPlayer and followPlayer.Name or "player not found"))
-        elseif command == "/attack" and #args > 1 then
-            local targetName = table.concat(args, " ", 2)
-            attackTarget = findPlayerByName(targetName)
-            followPlayer = nil
-            print("Command to attack: " .. (attackTarget and attackTarget.Name or "player not found"))
-        elseif command == "/stop" then
-            followPlayer = nil
-            attackTarget = nil
-            print("AI actions stopped.")
-        end
-    end
-end
-
--- Connect the chat handler
-Player.Chatted:Connect(onPlayerChatted)
-
--- Helper function to find player by partial name match
-local function findPlayerByName(partialName)
-    partialName = partialName:lower()
-    for _, p in pairs(Players:GetPlayers()) do
-        local username = p.Name:lower()
-        local displayName = (p.DisplayName or ""):lower()
-        if username:find(partialName) or displayName:find(partialName) then
-            return p
-        end
-    end
-    return nil
-end
-
 -- Main combat AI routine
-local function trackAndInteract()
-    while true do
-        wait(0.1)
-        if not aiActive or not Player.Character or not Player.Character:FindFirstChild("HumanoidRootPart") then continue end
+local function CombatRoutine()
+    while aiActive do
+        wait(0.1)  -- Reduce frequency to minimize performance impact
+        if not Player.Character or not Player.Character:FindFirstChild("HumanoidRootPart") then continue end
 
         local humanoid = Player.Character:FindFirstChildOfClass("Humanoid")
         local rootPart = Player.Character.HumanoidRootPart
 
         if followPlayer and followPlayer.Character and followPlayer.Character:FindFirstChild("HumanoidRootPart") then
             humanoid:MoveTo(followPlayer.Character.HumanoidRootPart.Position)
-            print("Moving to " .. followPlayer.Name)  -- Debugging output
-        elseif attackTarget and attackTarget.Character and attackTarget.Character:FindFirstChild("HumanoidRootPart") then
-            humanoid:MoveTo(attackTarget.Character.HumanoidRootPart.Position)
-            if (rootPart.Position - attackTarget.Character.HumanoidRootPart.Position).magnitude <= 10 then
-                local tool = Player.Character:FindFirstChildOfClass("Tool")
-                if tool then
-                    tool:Activate()
-                    print("Attacking " .. attackTarget.Name)  -- Debugging output
-                }
+        elseif attackTarget and attackTarget.Character then
+            local targetHumanoid = attackTarget.Character:FindFirstChildOfClass("Humanoid")
+            local targetRootPart = attackTarget.Character:FindFirstChild("HumanoidRootPart")
+
+            if targetHumanoid and targetHumanoid.Health > 0 and targetRootPart then
+                local moveToPosition = targetRootPart.Position
+                humanoid:MoveTo(moveToPosition)
+                local distance = (rootPart.Position - moveToPosition).magnitude
+
+                if distance <= 10 then  -- Attack range
+                    local tool = Player.Character:FindFirstChildOfClass("Tool")
+                    if tool then
+                        tool:Activate()
+                        print("Attacking " .. attackTarget.Name)
+                    end
+                end
+            else
+                attackTarget = nil  -- Reset if target is defeated or not found
             end
         end
     end
 end
 
-RunService.RenderStepped:Connect(trackAndInteract)
+-- Connect the chat handler to process commands
+Player.Chatted:Connect(function(message)
+    local args = message:split(" ")
+    local command = args[1]:lower()
+
+    if command == "/follow" and #args > 1 then
+        local targetName = table.concat(args, " ", 2)
+        followPlayer = findPlayerByName(targetName)
+        attackTarget = nil
+        if followPlayer then
+            print("Following " .. followPlayer.Name)
+        else
+            print("Player not found: " .. targetName)
+        end
+    elseif command == "/attack" and #args > 1 then
+        local targetName = table.concat(args, " ", 2)
+        attackTarget = findPlayerByName(targetName)
+        followPlayer = nil
+        if attackTarget then
+            print("Attacking " .. attackTarget.Name)
+        else
+            print("Player not found: " .. targetName)
+        end
+    elseif command == "/stop" then
+        followPlayer = nil
+        attackTarget = nil
+        print("Stopping actions.")
+    end
+end)
+
+-- Helper function to find a player by name, handling partial matches
+local function findPlayerByName(name)
+    local lowerName = name:lower()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player.Name:lower():find(lowerName) or (player.DisplayName and player.DisplayName:lower():find(lowerName)) then
+            return player
+        end
+    end
+    return nil
+end
 
 createGUI()
+RunService.RenderStepped:Connect(CombatRoutine)
